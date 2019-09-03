@@ -1,0 +1,34 @@
+---
+title: "ggvis"
+author: "Scott McKean"
+date: "3/6/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggvis)
+```
+
+
+```{r}
+mtc <- mtcars
+mtc$id <- 1:nrow(mtc)  # Add an id column to use ask the key
+
+out_df <- data.frame()
+
+all_values <- function(x) {
+  if(is.null(x)) return(NULL)
+  row <- mtc[mtc$id == x$id, ]
+  if (nrow(out_df) < 1){
+    out_df <- row
+  } else {
+    out_df <- rbind(out_df,row)
+  }
+  paste0(names(row), ": ", format(row), collapse = "<br />")
+}
+
+mtc %>% ggvis(x = ~wt, y = ~mpg, key := ~id) %>%
+  layer_points() %>%
+  add_tooltip(all_values, "click")
+
+```

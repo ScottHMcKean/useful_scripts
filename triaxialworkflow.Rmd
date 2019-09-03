@@ -1,0 +1,112 @@
+---
+title: "Triaxial Plotting Script"
+output: html_notebook
+---
+
+R Script to convert raw triaxial data to ggplot ready dataframes for
+publications. Taken from jupyter notebook that does the same plus backbone
+plots.
+
+Read data
+
+```{r}
+s_name = '351920_V'
+
+s_data <- read.csv('./Beaverhill/351920V_1_Clean.csv')
+names(s_data) <- c("time", "deviatoric_stress", "cell_pres", "pore_pres", 
+"axial_strain", "radial_strain", "vol_strain", "axial_load", "frame_lvdt", 
+"cell_pres_lvdt", "lvdt1", "lvdt2", "lvdt3")
+
+sample_dimensions <- read.csv('sample_dimensions.csv')
+
+s_dim <- sample_dimensions %>% filter(Sample == s_name)
+
+calc_df <- data.frame()
+```
+
+Do calculations
+
+```{r}
+platen_len = 70 # mm
+platen_area = 38 ^ 2 * pi / 4
+membr_thick = 1.592 # mm
+chain_len = 124.6 # mm
+piston_dia = 53.975 # mm
+platen_stif = 75000 # MPa
+membr_stif = 15000 # MPa
+chain_rol_rad = 3.43 # mm
+piston_area = piston_dia ^ 2 * pi / 4
+
+chain_circum = 2 * pi * s_dim$Diameter
+chain_arc = 2 * pi - chain_len / (0.5 * s_dim$Diameter + chain_rol_rad + membr_thick)
+er_den = s_dim$Diameter * (sin(0.5*chain_arc) + (pi-0.5*chain_arc)*cos(0.5*chain_arc))
+calc_df = data.frame(time = s_data$time / 60)
+epsilon_a = (s_data$lvdt1 + s_data$lvdt2)/2 /s_dim$Length #axial strain
+epsilon_r = s_data$lvdt3 / er_den #radial strain
+epsilon_v = epsilon_a + 2 * epsilon_r
+s_area_cor = pi * s_dim$Diameter ** 2  / 4 * (1-epsilon_r) / (1-epsilon_a);
+s_len_cor = s_dim$Length - s_dim$Length * epsilon_a
+s_rad_cor = sqrt(s_area_cor/pi)
+calc_df$sigma_q = (s_data$axial_load - s_data$cell_pres * piston_area/1000) / (s_area_cor/1000)
+calc_df$sigma_a = calc_df$sigma_q + s_data$cell_pres
+calc_df$sigma_p = 1/3 *(calc_df$sigma_q + s_data$cell_pres) + 2 / 3 * s_data$cell_pres
+calc_df$sigma_c = s_data$cell_pres
+calc_df$epsilon_a_s = epsilon_a - calc_df$sigma_q * s_area_cor * platen_len / (s_len_cor * platen_stif * platen_area)
+calc_df$epsilon_a_r = epsilon_r - s_data$cell_pres * membr_thick / ( s_rad_cor * membr_stif)
+calc_df$epsilon_a_v = calc_df$epsilon_a_s + 2 * calc_df$epsilon_a_r
+```
+
+# Plot the damn data
+
+```{r}
+filt_df <- calc_df %>% filter(sigma_q >= 2)
+
+filt_df$sigma_c <- filt_df$sigma_c %>% round(0) %>% as.factor()
+
+max_stress <- filt_df %>%
+  group_by(sigma_c) %>%
+  summarise(max = max(sigma_q))
+
+for (i in 1:nrow(max_stress)) {
+  peak <- filt_df %>% filter(sigma_c == max_stress$sigma_c[i]) %>% filter(sigma_q == max_stress$max[i])
+  
+  if (i == 1) {
+    load_df <- filt_df %>% filter(sigma_c == max_stress$sigma_c[i], time <= peak$time)   
+  } else if (i != 4) {
+    load_df <- rbind(load_df,
+                     filt_df %>% filter(sigma_c == max_stress$sigma_c[i], time <= peak$time))
+  } else {
+    load_df <- rbind(load_df,
+                     filt_df %>% filter(sigma_c == max_stress$sigma_c[i]))
+  }
+}
+
+ggplot(load_df) +
+  geom_path(aes(x = epsilon_a_s * 100, y = sigma_q, colour = sigma_c), 
+             size = 0.5) +
+  ylim(0,300) +
+  xlim(0,4) +
+  ylab('Deviatoric Stress (MPa)') +
+  xlab('Axial Strain (%)') +
+  scale_color_brewer(palette = 'Set1', name = 'Confining Stress') +
+  ggtitle('Beaverhill (Kaybob)') +
+  ggsave('beaverhill_triaxial.jpg',width = 6, height =6, dpi = 600)
+```
+
+```{r}
+all_stages$sigma_c <- all_stages$sigma_c %>% round(0) %>% as.factor()
+
+ggplot(all_stages) + 
+  geom_path(aes(x = epsilon_a_s, y = sigma_q, colour = sigma_c),
+             size = 0.25) +
+  geom_point(aes(x = epsilon_a_s, y = sigma_q, colour = sigma_c),
+             size = 0.5) +
+  ylim(0,300) +
+  xlim(0,4) +
+  ylab('Deviatoric Stress (MPa)') +
+  xlab('Axial Strain (%)') +
+  scale_color_brewer(palette = 'Set1', name = 'Confining Stress') +
+  ggtitle('Duvernay (Fox Creek)') +
+  ggsave('duvernay_triaxial.jpg',width = 6, height =6, dpi = 600)
+```
+
