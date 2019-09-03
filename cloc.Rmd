@@ -1,0 +1,46 @@
+---
+title: "CLOC"
+output: html_notebook
+---
+
+Small notebook to count the number of lines of code, blank text, and comments
+in a directory
+
+```{r setup}
+library(dplyr)
+library(stringr)
+```
+
+```{r}
+setwd("C:/OSForecasting/")
+
+all_lines <- function(file){
+  chr_vec <- file %>% readLines() %>% length()
+}
+
+blank_lines <- function(file){
+  chr_vec <- file %>% readLines()
+  length(chr_vec[chr_vec == ""])
+}
+
+comment_lines <- function(file){
+  chr_vec <- file %>% readLines()
+  length(chr_vec[grep("#",chr_vec)])
+}
+
+files <- list.files(recursive = TRUE, full.names = TRUE) %>%
+  str_subset("[.][R]$") 
+
+no_files <- length(files)
+
+all_lines <- sapply(files, all_lines) %>% sum()
+
+blank_lines <- sapply(files, blank_lines) %>% sum()
+
+comment_lines <- sapply(files, comment_lines) %>% sum()
+
+(paste0('.R files: ',no_files))
+(paste0('code: ',all_lines - blank_lines - comment_lines))
+(paste0('blank: ',blank_lines))
+(paste0('comments: ',comment_lines))
+```
