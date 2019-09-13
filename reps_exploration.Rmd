@@ -1,0 +1,108 @@
+---
+title: "Reps Exploration"
+author: "Scott McKean"
+date: "9/12/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(tidyverse)
+library(lubridate)
+```
+
+## Load REPS database
+
+```{r}
+reps_df <- fread('GOS-REPS.csv')
+reps_df <- reps_df[,1:16] %>%
+  as.data.frame() %>%
+  janitor::clean_names()
+```
+
+## REPS Categories
+
+```{r}
+gm_cats <- c('AS','ACV', 'BT', 'BH', 'CAPR', 'CRR', 'DST',
+             'DEP', 'FT', 'GM', 'IHT', 'MCFA' , 'PR',
+             'RM', 'SMA', 'SMT', 'SRT', 'SEP', 'TCT', 
+             'TSM', 'TS', 'UVel', 'UC', 'YM')
+
+# get geomechanics categories
+gm_bool <- map_dfc(gm_cats, grepl, x = reps_df$analysis_test_type, fixed = TRUE)
+colnames(gm_bool) <- gm_cats %>% str_to_lower()
+gm_bool$all_tests <- (rowSums(gm_bool) > 0)
+
+# filter data frame to geomechanics tests
+# 44,000 with TSS (thin section slides)
+# 4,466 without TSS!
+# 3,792 without TSPM / TSPT (thin section petrography)!
+gm_df <- reps_df[(gm_bool$all_tests) & 
+                   (reps_df$analysis_test_type != 'TSS') &
+                   (reps_df$analysis_test_type != 'TSPM') &
+                   (reps_df$analysis_test_type != 'TSPT') &
+                   (reps_df$analysis_test_type != 'TSPM, TSPT') &
+                   (reps_df$analysis_test_type != 'FIT, TSPM, TSPT') &
+                   (reps_df$analysis_test_type != 'TSPM, XRD') &
+                   (reps_df$analysis_test_type != 'PS, SEMP, TSPM') &
+                   (reps_df$analysis_test_type != 'TSPM, TSPT, XRD') &
+                   (reps_df$analysis_test_type != 'TSOSI') &
+                   (reps_df$analysis_test_type != 'SEMA, SEMP, TSPM, TSPT, XRD') &
+                   (reps_df$analysis_test_type != 'SEMA, SEMP, TSPM, TSPT') &
+                   (reps_df$analysis_test_type != 'SEMA, TSPM')&
+                   (reps_df$analysis_test_type != 'LITH, ROUTINE, APERM')&
+                   (reps_df$analysis_test_type != 'SEMA, SEMP, TSPM, XRD'),]
+
+write.csv(gm_df, 'possible_geomechanics_tests_alberta.csv')
+```
+
+
+## Formation Search
+
+```{r}
+pools <- c( "Beaverhill", "Beaverhill Lake", "Beaverhill Lake A",
+   "Duvernay", "Duvernay A", "Duvernay C", "Duvy Und")
+
+pool_bool <- (map_dfc(pools, grepl, x = gm_df$pool_name) %>% rowSums > 0)
+
+# get 25 cores from the pool search
+gm_pool <- gm_df[pool_bool,]
+
+fields <- c("Edson", "EDSON", "Karr", "Kaybob", "Kaybob South", "Kaybobs", 
+            "KAYBOBS", "Swan Hills", "Willesden Green")
+
+field_bool <- (map_dfc(fields, grepl, x = gm_df$field) %>% rowSums > 0)
+
+# get 90 cores from the field search
+gm_field <- gm_df[field_bool,]
+
+#gm_df$formation %>% unique %>% sort %>% dput
+
+formations <- c("BEAVERHILL LAKE GROUP", "COOKING LAKE FORMATION", 
+                "DUVERNAY FORMATION", "LEDUC FORMATION", 
+                "MAJEAU LAKE MEMBER", "SWAN HILLS FORMATION",
+                "WATERWAYS FORMATION", "WOODBEND GROUP")
+
+formation_bool <- (map_dfc(formations, grepl, x = gm_df$formation) %>% rowSums > 0)
+
+# get 131 cores from the formation search
+gm_formation <- gm_df[formation_bool,]
+```
+
+## Get final results
+
+```{r}
+all_bool <- cbind(pool_bool, field_bool, formation_bool) %>% rowSums > 0
+study_gm_df <- gm_df[all_bool,]
+
+study_gm_df <- study_gm_df %>%
+  mutate(date = mdy(study_gm_df$analysis_date)) %>%
+  filter(date > ymd("1990-01-01")) %>%
+  filter(pool_name != 'Montney') %>%
+  filter(pool_name != 'Wilrich')
+
+write.csv(study_gm_df, 'possible_geomechanics_tests_study.csv')
+
+# We have 73 unique UWIs to search in geoscout
+study_gm_df %>% pull(uwi) %>% unique %>% length
+```
