@@ -1,2 +1,2 @@
-# useful_r_scripts
- Useful Random R Scripts
+# Useful R Scripts
+ A collection of useful R scripts
